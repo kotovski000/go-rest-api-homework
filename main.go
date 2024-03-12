@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -54,27 +53,32 @@ func getAllTasksHandler(w http.ResponseWriter, r *http.Request) {
 }
 func createTaskHandler(w http.ResponseWriter, r *http.Request) {
 	var newTask Task
-	var buf bytes.Buffer
-
-	_, err := buf.ReadFrom(r.Body)
+	err := json.NewDecoder(r.Body).Decode(&newTask)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Валидация полученных данных
+	if newTask.ID == "" || newTask.Description == "" {
+		http.Error(w, "ID и Description обязательны для создания задачи", http.StatusBadRequest)
+		return
+	}
 
-	if err = json.Unmarshal(buf.Bytes(), &newTask); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if _, exists := tasks[newTask.ID]; exists {
+		http.Error(w, "Задача с таким ID уже существует", http.StatusBadRequest)
 		return
 	}
 
 	tasks[newTask.ID] = newTask
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 }
-func getTaskByIDHandler(w http.ResponseWriter, r *http.Request) {
+
+func getTaskByID(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "id")
 	task, ok := tasks[taskID]
 	if !ok {
-		http.Error(w, "Task not found", http.StatusNoContent)
+		http.Error(w, "Task not found", http.StatusBadRequest)
 		return
 	}
 	taskJSON, err := json.Marshal(task)
@@ -90,6 +94,13 @@ func getTaskByIDHandler(w http.ResponseWriter, r *http.Request) {
 
 func deleteTaskByIDHandler(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "id")
+
+	_, ok := tasks[taskID]
+	if !ok {
+		http.Error(w, "Task not found", http.StatusBadRequest)
+		return
+	}
+
 	delete(tasks, taskID)
 	w.WriteHeader(http.StatusOK)
 }
@@ -104,7 +115,7 @@ func main() {
 	// Обработчик для отправки задачи на сервер
 	r.Post("/tasks", createTaskHandler)
 	// Обработчик для получения задачи по ID
-	r.Get("/task/{id}", getTaskByIDHandler)
+	r.Get("/task/{id}", getTaskByID)
 	// Обработчик удаления задачи по ID
 	r.Delete("/task/{id}", deleteTaskByIDHandler)
 
